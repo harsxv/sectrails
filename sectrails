@@ -64,7 +64,6 @@ get_dns_history() {
 
   # Fetch raw response and print it for debugging
   response=$(securitytrails_get "/history/${domain}/dns/a" "")
-  echo "Raw API Response: ${response}"  # Debugging step
 
   # Process response with jq
   echo -e "=== DNS History for ${domain} ===\n"
