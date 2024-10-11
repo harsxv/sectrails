@@ -1,0 +1,106 @@
+#!/bin/bash
+
+API_KEY=$SECTRAILS_API_KEY
+BASE_URL="https://api.securitytrails.com/v1"
+
+# Function to make GET requests to the SecurityTrails API
+securitytrails_get() {
+  endpoint=$1
+  params=$2
+
+  response=$(curl -s -X GET "${BASE_URL}${endpoint}" \
+  -H "Accept: application/json" \
+  -H "APIKEY: ${API_KEY}" \
+  -G --data-urlencode "${params}")
+
+  # Check if the response is valid JSON
+  if ! echo "${response}" | jq empty 2>/dev/null; then
+    echo "Error: API did not return valid JSON. Response was:"
+    echo "${response}"
+    exit 1
+  fi
+
+  echo "${response}"
+}
+
+# Function to get domain details
+get_domain_details() {
+  domain=$1
+  response=$(securitytrails_get "/domain/${domain}" "")
+  
+  echo -e "=== Domain Details for ${domain} ===\n"
+
+  # Display general information
+  echo "${response}" | jq -r '[
+    "* Apex Domain: \(.apex_domain // "N/A")",
+    "* Hostname: \(.hostname // "N/A")",
+    "* Current DNS:"
+  ] | .[]'
+
+  # Display A records
+  a_records=$(echo "${response}" | jq -r '.current_dns.a.values[]? | "* IP: \(.ip // "N/A") (First Seen: \(.first_seen // "N/A"), Organization: \(.ip_organization // "N/A"))"')
+  echo -e "\nA Records:\n${a_records:-"No A records found"}"
+
+  # Display MX records
+  mx_records=$(echo "${response}" | jq -r '.current_dns.mx.values[]? | "* Hostname: \(.hostname // "N/A") (Priority: \(.priority // "N/A"), First Seen: \(.first_seen // "N/A"), Organization: \(.hostname_organization // "N/A"))"')
+  echo -e "\nMX Records:\n${mx_records:-"No MX records found"}"
+
+  # Display NS records
+  ns_records=$(echo "${response}" | jq -r '.current_dns.ns.values[]? | "* Nameserver: \(.nameserver // "N/A") (First Seen: \(.first_seen // "N/A"), Organization: \(.nameserver_organization // "N/A"))"')
+  echo -e "\nNS Records:\n${ns_records:-"No NS records found"}"
+
+  # Display SOA record
+  soa_record=$(echo "${response}" | jq -r '.current_dns.soa.values[]? | "* Email: \(.email // "N/A") (TTL: \(.ttl // "N/A"))"')
+  echo -e "\nSOA Record:\n${soa_record:-"No SOA record found"}"
+
+  # Display TXT records
+  txt_records=$(echo "${response}" | jq -r '.current_dns.txt.values[]? | "* Value: \(.value // "N/A")"')
+  echo -e "\nTXT Records:\n${txt_records:-"No TXT records found"}"
+}
+
+# Function to get DNS history
+get_dns_history() {
+  domain=$1
+
+  # Fetch raw response and print it for debugging
+  response=$(securitytrails_get "/history/${domain}/dns/a" "")
+  echo "Raw API Response: ${response}"  # Debugging step
+
+  # Process response with jq
+  echo -e "=== DNS History for ${domain} ===\n"
+
+  echo "${response}" | jq -r '.records[]? | 
+    "First Seen: \(.first_seen // "N/A")\nLast Seen: \(.last_seen // "N/A")\nOrganizations: \(.organizations | join(", ") // "N/A")\n" + 
+    (.values[]? | "* IP Address: \(.ip // "N/A")\n") + 
+    "-------------------------------"'
+}
+
+# Function to display usage information
+usage() {
+  echo "Usage: $0 <command> <domain>"
+  echo "Commands:"
+  echo "  --info      Get details of a domain"
+  echo "  --history   Get DNS history of a domain"
+  exit 1
+}
+
+# Check for valid arguments
+if [[ "$#" -ne 2 ]]; then
+  usage
+fi
+
+COMMAND=$1
+DOMAIN=$2
+
+case $COMMAND in
+  --info)
+    get_domain_details "$DOMAIN"
+    ;;
+  --history)
+    get_dns_history "$DOMAIN"
+    ;;
+  *)
+    echo "Invalid command"
+    usage
+    ;;
+esac
